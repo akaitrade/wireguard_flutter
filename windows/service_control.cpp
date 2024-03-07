@@ -49,10 +49,11 @@ namespace wireguard_flutter
     }
 
     SC_HANDLE service = OpenService(service_manager, &service_name_[0], SC_MANAGER_ALL_ACCESS);
+    
     if (service == NULL)
     {
       CloseServiceHandle(service);
-
+     
       EmitState("connecting");
       service = CreateService(service_manager,                  // SCM database
                               &service_name_[0],                // name of service
@@ -118,7 +119,23 @@ namespace wireguard_flutter
     }
 
     EmitState("connecting");
+    bool ChangeService = ChangeServiceConfig(service,
+          SERVICE_WIN32_OWN_PROCESS,
+          SERVICE_DEMAND_START,
+          SERVICE_ERROR_NORMAL,
+          args.executable_and_args.c_str(),
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          NULL
 
+      );
+      if (ChangeService) {
+          std::cout << "Success Canging Service" << std::endl;
+
+      }
     if (!StartService(service, 0, NULL))
     {
       std::cout << "Failed to start the service: " << GetLastError() << std::endl;
@@ -139,7 +156,6 @@ namespace wireguard_flutter
       EmitState("denied");
       throw ServiceControlException("Failed to start the service", GetLastError());
     }
-
     EmitState("connected");
 
     CloseServiceHandle(service);
