@@ -160,6 +160,9 @@ class WireguardFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             "stage" -> {
                 result.success(getStatus())
             }
+            "getStats" -> { 
+                handleGetStats(call.arguments, result)
+            }
             "checkPermission" -> {
                 checkPermission()
                 result.success(null)
@@ -270,6 +273,32 @@ class WireguardFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             result.success(null)
         }
     }
+    
+    private fun handleGetStats(arguments: Any?, result: MethodChannel.Result) {
+        val tunnelName = arguments?.toString()
+        if (tunnelName == null || tunnelName.isEmpty()) {
+            flutterError(result, "Provide tunnel name to get statistics")
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+
+            try {
+                val stats = futureBackend.await().getStatistics(tunnel(tunnelName))
+
+                flutterSuccess(result, Klaxon().toJsonString(
+                    Stats(stats.totalRx(), stats.totalTx())
+                ))
+
+            } catch (e: BackendException) {
+                Log.e(TAG, "handleGetStats - BackendException - ERROR - ${e.reason}")
+                flutterError(result, e.reason.toString())
+            } catch (e: Throwable) {
+                Log.e(TAG, "handleGetStats - Can't get stats: $e")
+                flutterError(result, e.message.toString())
+            }
+        }
+    }
 
     private fun checkPermission() {
         val intent = GoBackend.VpnService.prepare(this.activity)
@@ -308,4 +337,7 @@ class WireGuardTunnel(
     }
 
 }
-
+class Stats(
+    val totalDownload: Long,
+    val totalUpload: Long,
+)

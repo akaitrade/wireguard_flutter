@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
-
+import 'package:wireguard_flutter/src/models/stats.dart';
+import 'dart:convert';
 import 'wireguard_flutter_platform_interface.dart';
 
 class WireGuardFlutterMethodChannel extends WireGuardFlutterInterface {
@@ -44,6 +45,20 @@ class WireGuardFlutterMethodChannel extends WireGuardFlutterInterface {
 
   @override
   Future<void> stopVpn() => _methodChannel.invokeMethod('stop');
+/// Implementation of the method [tunnelGetStats] using the PlatformChannel.
+  @override
+  Future<Stats?> tunnelGetStats(String name) async {
+    try {
+      final result = await _methodChannel.invokeMethod('getStats', name);
+      final stats = Stats.fromJson(jsonDecode(result));
+      return stats;
+    } on Exception catch (e) {
+      // Handle the exception and log it if necessary
+      print('Error getting stats: $e');
+      return null; // Ensure a value is returned
+    }
+  }
+
 
   @override
   Future<void> refreshStage() => _methodChannel.invokeMethod("refresh");

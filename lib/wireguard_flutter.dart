@@ -1,9 +1,8 @@
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:wireguard_flutter/linux/wireguard_flutter_linux.dart';
 import 'package:wireguard_flutter/wireguard_flutter_method_channel.dart';
-
+import 'src/models/stats.dart';
 import 'wireguard_flutter_platform_interface.dart';
 
 export 'wireguard_flutter_platform_interface.dart' show VpnStage;
@@ -59,4 +58,10 @@ class WireGuardFlutter extends WireGuardFlutterInterface {
 
   @override
   Future<VpnStage> stage() => _instance.stage();
+
+  /// Method [tunnelGetStats] receives the [name] of the tunnel that will take the Stats
+  /// and returns an object of the [Stats] class with the values of the tunnel.
+  Future<Stats?> tunnelGetStats(String name) {
+    return _instance.tunnelGetStats(name);
+  }
 }

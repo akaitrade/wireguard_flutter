@@ -1,3 +1,5 @@
+import 'src/models/stats.dart';
+
 abstract class WireGuardFlutterInterface {
   Stream<VpnStage> get vpnStageSnapshot;
 
@@ -13,6 +15,10 @@ abstract class WireGuardFlutterInterface {
 
   Future<void> refreshStage();
   Future<VpnStage> stage();
+  /// Declaration of the method [tunnelGetStats] this is responsible for obtaining the stats of the tunnels.
+  Future<Stats?> tunnelGetStats(String name) {
+    throw UnimplementedError('runningTunnelNames() has not been implemented.');
+  }
   Future<bool> isConnected() =>
       stage().then((stage) => stage == VpnStage.connected);
 }

@@ -1,5 +1,5 @@
 import 'dart:async';
-
+import 'package:wireguard_flutter/src/models/stats.dart';
 import 'package:flutter/material.dart';
 import 'package:wireguard_flutter/wireguard_flutter.dart';
 
@@ -25,7 +25,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final wireguard = WireGuardFlutter.instance;
-
+  Stats stats = Stats(totalDownload: 0, totalUpload: 0);
   late String name;
 
   @override
@@ -80,6 +80,21 @@ class _MyAppState extends State<MyApp> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('stage: $stage'),
+      ));
+    }
+  }
+  
+  void getStats() async {
+    debugPrint("getting stats");
+    final results = await wireguard.tunnelGetStats("com.example");
+    setState(() {
+        stats = results ?? Stats(totalDownload: 0, totalUpload: 0);
+      });
+    //debugPrint("stage: $stage");
+    debugPrint("STATS: Download: ${stats.totalDownload}/ Upload ${stats.totalUpload}");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('stage: ${stats.totalDownload}'),
       ));
     }
   }
@@ -158,6 +173,23 @@ class _MyAppState extends State<MyApp> {
                     Colors.white.withOpacity(0.1))),
             child: const Text(
               'Get status',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+          const SizedBox(height: 20),
+          TextButton(
+            onPressed: getStats,
+            style: ButtonStyle(
+                minimumSize:
+                    MaterialStateProperty.all<Size>(const Size(100, 50)),
+                padding: MaterialStateProperty.all(
+                    const EdgeInsets.fromLTRB(20, 15, 20, 15)),
+                backgroundColor:
+                    MaterialStateProperty.all<Color>(Colors.blueAccent),
+                overlayColor: MaterialStateProperty.all<Color>(
+                    Colors.white.withOpacity(0.1))),
+            child: const Text(
+              'Get stats',
               style: TextStyle(color: Colors.white),
             ),
           ),

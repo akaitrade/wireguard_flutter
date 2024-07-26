@@ -89,6 +89,9 @@ class WireGuardFlutterLinux extends WireGuardFlutterInterface {
   Future<VpnStage> stage() async => _stage;
 
   @override
+  Future<VpnStage> stats() async => _stage;
+
+  @override
   Stream<VpnStage> get vpnStageSnapshot => _stageController.stream;
 
   @override
