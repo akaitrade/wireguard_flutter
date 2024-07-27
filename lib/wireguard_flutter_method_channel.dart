@@ -1,5 +1,5 @@
 import 'package:flutter/services.dart';
-import 'package:wireguard_flutter/src/models/stats.dart';
+import 'package:wireguard_flutter/src/models/models.dart';
 import 'dart:convert';
 import 'wireguard_flutter_platform_interface.dart';
 

@@ -1,4 +1,4 @@
-import 'src/models/stats.dart';
+import 'src/models/models.dart';
 
 abstract class WireGuardFlutterInterface {
   Stream<VpnStage> get vpnStageSnapshot;
