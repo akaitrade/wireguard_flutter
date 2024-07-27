@@ -70,6 +70,15 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
                 break;
             case "dispose":
                 self.initialized = false
+            case "getStatistics":
+                WireguardFlutterPlugin.utils.getStatistics { result in
+                    switch result {
+                    case .success(let statistics):
+                        result(statistics)
+                    case .failure(let error):
+                        result(FlutterError(code: "-5", message: error.localizedDescription, details: nil))
+                    }
+                }
             default:
                 break;
             }
