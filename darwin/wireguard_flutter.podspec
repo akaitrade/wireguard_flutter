@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name = "wireguard_flutter"
-  s.version = "0.0.1"
+  s.version = "0.0.2"
   s.summary = "Wireguard (darwin)"
   s.description = <<-DESC
 Wireguard flutter SDK for iOS/macOS
