@@ -57,7 +57,7 @@ class _MyAppState extends State<MyApp> {
       await wireguard.startVpn(
         serverAddress: '167.235.55.239:51820',
         wgQuickConfig: conf,
-        providerBundleIdentifier: 'com.billion.wireguardvpn.WGExtension',
+        providerBundleIdentifier: 'com.fasttec.wireguardvpn.WGExtension',
       );
     } catch (error, stack) {
       debugPrint("failed to start $error\n$stack");
@@ -83,15 +83,17 @@ class _MyAppState extends State<MyApp> {
       ));
     }
   }
-  
+
   void getStats() async {
     debugPrint("getting stats");
-    final results = await wireguard.tunnelGetStats("com.example");
+    final results =
+        await wireguard.tunnelGetStats("com.fasttec.wireguardvpn.WGExtension");
     setState(() {
-        stats = results ?? Stats(totalDownload: 0, totalUpload: 0);
-      });
+      stats = results ?? Stats(totalDownload: 0, totalUpload: 0);
+    });
     //debugPrint("stage: $stage");
-    debugPrint("STATS: Download: ${stats.totalDownload}/ Upload ${stats.totalUpload}");
+    debugPrint(
+        "STATS: Download: ${stats.totalDownload}/ Upload ${stats.totalUpload}");
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('stage: ${stats.totalDownload}'),
