@@ -1,4 +1,5 @@
 {
+  "originHash" : "9dbf92425327225a54a4b0d940943559d260315927b3edb07048b8f82e05e1aa",
   "pins" : [
     {
       "identity" : "wireguard-apple",
@@ -10,5 +11,5 @@
       }
     }
   ],
-  "version" : 2
+  "version" : 3
 }

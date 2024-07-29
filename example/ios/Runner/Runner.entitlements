@@ -10,7 +10,7 @@
 	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.billion.wireguardvpn</string>
+		<string>group.com.fasttec.wireguardvpn</string>
 	</array>
 </dict>
 </plist>

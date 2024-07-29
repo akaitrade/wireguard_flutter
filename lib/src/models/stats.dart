@@ -18,8 +18,9 @@ class Stats {
   /// Method [Stats.fromJson] to convert the JSON to class.
   factory Stats.fromJson(Map<String, dynamic> json) {
     return Stats(
-      totalDownload: json['totalDownload'] as num,
-      totalUpload: json['totalUpload'] as num,
+      totalDownload:
+          json['totalDownload'] ?? 0, // Provide default value if null
+      totalUpload: json['totalUpload'] ?? 0, // Provide default value if null
     );
   }
 }
