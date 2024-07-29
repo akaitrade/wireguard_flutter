@@ -45,12 +45,14 @@ class WireGuardFlutterMethodChannel extends WireGuardFlutterInterface {
 
   @override
   Future<void> stopVpn() => _methodChannel.invokeMethod('stop');
-/// Implementation of the method [tunnelGetStats] using the PlatformChannel.
+
+  /// Implementation of the method [tunnelGetStats] using the PlatformChannel.
   @override
   Future<Stats?> tunnelGetStats(String name) async {
     try {
       final result = await _methodChannel.invokeMethod('getStats', name);
       final stats = Stats.fromJson(jsonDecode(result));
+      print(result);
       return stats;
     } on Exception catch (e) {
       // Handle the exception and log it if necessary
@@ -58,7 +60,6 @@ class WireGuardFlutterMethodChannel extends WireGuardFlutterInterface {
       return null; // Ensure a value is returned
     }
   }
-
 
   @override
   Future<void> refreshStage() => _methodChannel.invokeMethod("refresh");

@@ -394,7 +394,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
             if let message = String(data: messageData, encoding: .utf8) {
                 if message == "GET_STATISTICS" {
-                    let stats: [String: Int64] = ["received": bytesReceived, "sent": bytesSent]
+                    let stats: [String: Int64] = ["totalDownload": bytesReceived, "totalUpload": bytesSent]
                     log("Returning stats: \(stats)") // Log the stats being returned
                     if let data = try? JSONSerialization.data(withJSONObject: stats, options: []) {
                         completionHandler?(data)
