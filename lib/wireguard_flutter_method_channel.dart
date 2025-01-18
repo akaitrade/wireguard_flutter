@@ -46,19 +46,19 @@ class WireGuardFlutterMethodChannel extends WireGuardFlutterInterface {
   @override
   Future<void> stopVpn() => _methodChannel.invokeMethod('stop');
 
-  /// Implementation of the method [tunnelGetStats] using the PlatformChannel.
+  /// Implementation of the method [tunnelGetStats] using the PlatformChannel
+  /// without `await`.
   @override
-  Future<Stats?> tunnelGetStats(String name) async {
-    try {
-      final result = await _methodChannel.invokeMethod('getStats', name);
+  Future<Stats?> tunnelGetStats(String name) {
+    return _methodChannel.invokeMethod('getStats', name).then((result) {
+      // result should be a JSON string
       final stats = Stats.fromJson(jsonDecode(result));
       print(result);
       return stats;
-    } on Exception catch (e) {
-      // Handle the exception and log it if necessary
-      print('Error getting stats: $e');
-      return null; // Ensure a value is returned
-    }
+    }).catchError((error) {
+      print('Error getting stats: $error');
+      return null;
+    });
   }
 
   @override
