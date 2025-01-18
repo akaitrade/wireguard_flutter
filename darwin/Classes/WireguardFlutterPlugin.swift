@@ -154,33 +154,36 @@ class VPNUtils {
     }
 
     func getStatistics(completion: @escaping (Result<String, Error>) -> Void) {
-    NSLog("Statistics IOS")
-    loadProviderManager { error in
-        if let error = error {
-            completion(.failure(error))
-            return
-        }
-        
-        guard let session = self.providerManager.connection as? NETunnelProviderSession else {
-            completion(.failure(NSError(domain: "VPNUtils", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid session"])))
-            return
-        }
-        
-        do {
-            NSLog("Sending GET_STATISTICS message to tunnel provider")
-            try session.sendProviderMessage("GET_STATISTICS".data(using: .utf8)!) { response in
-                guard let response = response,
-                      let responseString = String(data: response, encoding: .utf8) else {
-                    completion(.failure(NSError(domain: "VPNUtils", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get response"])))
-                    return
-                }
-                NSLog("Received response: \(responseString)")
-                completion(.success(responseString))
+    DispatchQueue.global(qos: .utility).async {
+        self.loadProviderManager { error in
+            if let error = error {
+                completion(.failure(error))
+                return
             }
-        } catch {
-            completion(.failure(error))
+
+            guard let session = self.providerManager.connection as? NETunnelProviderSession else {
+                completion(.failure(NSError(domain: "VPNUtils", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid session"])))
+                return
+            }
+
+            do {
+                try session.sendProviderMessage("GET_STATISTICS".data(using: .utf8)!) { response in
+                    guard
+                        let response = response,
+                        let responseString = String(data: response, encoding: .utf8)
+                    else {
+                        completion(.failure(NSError(domain: "VPNUtils", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to get response"])))
+                        return
+                    }
+                    completion(.success(responseString))
+                }
+            } catch {
+                completion(.failure(error))
+            }
         }
-    }  
+    }
+}
+
 }
 
     func onVpnStatusChanged(notification: NEVPNStatus) {
