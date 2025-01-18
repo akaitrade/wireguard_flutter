@@ -55,7 +55,7 @@ class _MyAppState extends State<MyApp> {
   void startVpn() async {
     try {
       await wireguard.startVpn(
-        serverAddress: '167.235.55.239:51820',
+        serverAddress: '45.86.229.230:51820',
         wgQuickConfig: conf,
         providerBundleIdentifier: 'com.fasttec.wireguardvpn.WGExtension',
       );
@@ -94,11 +94,6 @@ class _MyAppState extends State<MyApp> {
     //debugPrint("stage: $stage");
     debugPrint(
         "STATS: Download: ${stats.totalDownload}/ Upload ${stats.totalUpload}");
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('stage: ${stats.totalDownload}'),
-      ));
-    }
   }
 
   @override
@@ -202,14 +197,14 @@ class _MyAppState extends State<MyApp> {
 }
 
 const String conf = '''[Interface]
-PrivateKey = 0IZmHsxiNQ54TsUs0EQ71JNsa5f70zVf1LmDvON1CXc=
-Address = 10.8.0.4/32
+PrivateKey = 6HAlgj2xzQ+ok97DVtoXb8yTmJ4q1BTP4GKMvgzHR2g=
+Address = 10.8.0.14/32
 DNS = 1.1.1.1
 
 
 [Peer]
-PublicKey = 6uZg6T0J1bHuEmdqPx8OmxQ2ebBJ8TnVpnCdV8jHliQ=
-PresharedKey = As6JiXcYcqwjSHxSOrmQT13uGVlBG90uXZWmtaezZVs=
+PublicKey = 5EeRTiEV5HiyyEfuwOX7p8rtpP4LCqdF6wqjkYzmsSs=
+PresharedKey = 0fdO47fq6FMgfuypjETNSfpYs7c6bonqvWEapOflcEc=
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 0
-Endpoint = 38.180.13.85:51820''';
+Endpoint = 45.86.229.230:51820''';

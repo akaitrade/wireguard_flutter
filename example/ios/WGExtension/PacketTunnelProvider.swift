@@ -14,7 +14,7 @@
 import Foundation
 import NetworkExtension
 import WireGuardKit
-
+import os;
 
 enum PacketTunnelProviderError: String, Error {
     case invalidProtocolConfiguration
@@ -312,44 +312,57 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         
         private var bytesReceived: Int64 = 0
         private var bytesSent: Int64 = 0
+        private var hasStartedReadingPackets = false
 
     func log(_ message: String) {
         NSLog("WireGuard Tunnel: %@\n", message)
+        os_log("WireGuard Tunnel: %@\n", message)
+        fflush(stdout)
     }
 
     override func startTunnel(options: [String : NSObject]?, completionHandler: @escaping (Error?) -> Void) {
-            log("Starting tunnel")
-            guard let protocolConfiguration = self.protocolConfiguration as? NETunnelProviderProtocol,
-                  let providerConfiguration = protocolConfiguration.providerConfiguration,
-                  let wgQuickConfig = providerConfiguration["wgQuickConfig"] as? String else {
-                log("Invalid provider configuration")
-                completionHandler(PacketTunnelProviderError.invalidProtocolConfiguration)
-                return
-            }
-            
-            log("wg-quick config parseable")
-            guard let tunnelConfiguration = try? TunnelConfiguration(fromWgQuickConfig: wgQuickConfig) else {
-                log("wg-quick config not parseable")
-                completionHandler(PacketTunnelProviderError.cantParseWgQuickConfig)
-                return
-            }
-            
-            log("adapter.start")
+        log("Starting tunnel")
+        guard let protocolConfiguration = self.protocolConfiguration as? NETunnelProviderProtocol,
+              let providerConfiguration = protocolConfiguration.providerConfiguration,
+              let wgQuickConfig = providerConfiguration["wgQuickConfig"] as? String else {
+            log("Invalid provider configuration")
+            completionHandler(PacketTunnelProviderError.invalidProtocolConfiguration)
+            return
+        }
+        log("here")
+        do {
+            log("Attempting to parse wgQuickConfig")
+            let tunnelConfiguration = try TunnelConfiguration(fromWgQuickConfig: wgQuickConfig)
+            log("Parsed wgQuickConfig successfully")
+
             bytesReceived = 0
             bytesSent = 0
-            
+
+            log("Attempting to start adapter")
             adapter.start(tunnelConfiguration: tunnelConfiguration) { [weak self] adapterError in
-                guard let self = self else { return }
+                guard let self = self else {
+                    self?.log("Self is nil")
+                    return
+                }
                 if let adapterError = adapterError {
-                    self.log("WireGuard adapter error: \(adapterError.localizedDescription)")
+                    log("WireGuard adapter error: \(adapterError.localizedDescription)")
+                    completionHandler(adapterError)
                 } else {
                     let interfaceName = self.adapter.interfaceName ?? "unknown"
-                    self.log("Tunnel interface is \(interfaceName)")
-                    self.startReadingPackets() // Start reading packets
+                    log("Tunnel interface is \(interfaceName)")
+                    self.startReadingPackets()
+                    completionHandler(nil)
                 }
-                completionHandler(adapterError)
             }
+            log("Adapter start method call completed")
+        } catch {
+            log("Failed to parse wgQuickConfig: \(error.localizedDescription)")
+            completionHandler(PacketTunnelProviderError.cantParseWgQuickConfig)
         }
+    }
+
+
+
 
 
 
@@ -370,32 +383,49 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             }
         }
     private func startReadingPackets() {
-        packetFlow.readPackets { [weak self] packets, protocols in
+        adapter.getRuntimeConfiguration { [weak self] runtimeConfig in
             guard let self = self else { return }
-            for packet in packets {
-                self.bytesReceived += Int64(packet.count)
-                log("Packet received: \(packet.count) bytes, Total received: \(self.bytesReceived) bytes")
-                // Process the packet as needed
-                // Example: self.writeOutgoingPackets(packets: [packet], protocols: protocols)
+            if let config = runtimeConfig {
+                // Extract tx_bytes and rx_bytes
+                if let txBytesString = self.extractValue(from: config, key: "tx_bytes"),
+                   let rxBytesString = self.extractValue(from: config, key: "rx_bytes"),
+                   let txBytes = Int64(txBytesString),
+                   let rxBytes = Int64(rxBytesString) {
+                    
+                    // Set the bytesReceived and bytesSent properties
+                    self.bytesReceived = rxBytes
+                    self.bytesSent = txBytes
+                } else {
+                    self.log("Failed to extract or convert tx_bytes or rx_bytes.")
+                }
+            } else {
+                // Handle the case where the configuration could not be retrieved
+                self.log("Failed to retrieve runtime configuration.")
             }
-            // Continue reading packets
-            self.startReadingPackets()
         }
     }
+    private func extractValue(from config: String, key: String) -> String? {
+        let lines = config.split(separator: "\n")
+        for line in lines {
+            let components = line.split(separator: "=", maxSplits: 1)
+            if components.count == 2 {
+                let currentKey = components[0].trimmingCharacters(in: .whitespaces)
+                let value = components[1].trimmingCharacters(in: .whitespaces)
+                if currentKey == key {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
 
-    private func writeOutgoingPackets(packets: [Data], protocols: [NSNumber]) {
-           for packet in packets {
-               self.bytesSent += Int64(packet.count)
-               self.log("Packet sent: \(packet.count) bytes, Total sent: \(self.bytesSent) bytes")
-           }
-           packetFlow.writePackets(packets, withProtocols: protocols)
-       }
+   
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
             if let message = String(data: messageData, encoding: .utf8) {
                 if message == "GET_STATISTICS" {
+                    startReadingPackets()
                     let stats: [String: Int64] = ["totalDownload": bytesReceived, "totalUpload": bytesSent]
-                    log("Returning stats: \(stats)") // Log the stats being returned
                     if let data = try? JSONSerialization.data(withJSONObject: stats, options: []) {
                         completionHandler?(data)
                     } else {
@@ -404,22 +434,31 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 } else {
                     completionHandler?(nil)
                 }
+
+                
+                
             } else {
                 log("Failed to decode incoming message data")
                 completionHandler?(nil)
             }
         }
-
+    
 
 
 
     override func sleep(completionHandler: @escaping () -> Void) {
         // Add code here to get ready to sleep.
+        //hasStartedReadingPackets = false;
+        log("Sleep")
         completionHandler()
     }
 
     override func wake() {
+        log("wake")
         // Add code here to wake up.
+        //if hasStartedReadingPackets {
+          // startReadingPackets() // Resume reading packets
+       //}
     }
 }
 

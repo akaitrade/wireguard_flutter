@@ -14,7 +14,7 @@
 import Foundation
 import NetworkExtension
 import WireGuardKit
-
+import os;
 
 enum PacketTunnelProviderError: String, Error {
     case invalidProtocolConfiguration
@@ -305,13 +305,19 @@ extension TunnelConfiguration {
 class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private lazy var adapter: WireGuardAdapter = {
-        return WireGuardAdapter(with: self) { [weak self] _, message in
-            self?.log(message)
-        }
-    }()
+            return WireGuardAdapter(with: self) { [weak self] _, message in
+                self?.log(message)
+            }
+        }()
+        
+        private var bytesReceived: Int64 = 0
+        private var bytesSent: Int64 = 0
+        private var hasStartedReadingPackets = false
 
     func log(_ message: String) {
         NSLog("WireGuard Tunnel: %@\n", message)
+        os_log("WireGuard Tunnel: %@\n", message)
+        fflush(stdout)
     }
 
     override func startTunnel(options: [String : NSObject]?, completionHandler: @escaping (Error?) -> Void) {
@@ -323,57 +329,136 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(PacketTunnelProviderError.invalidProtocolConfiguration)
             return
         }
-        
-        log("wg-quick config parseable")
-        guard let tunnelConfiguration = try? TunnelConfiguration(fromWgQuickConfig: wgQuickConfig) else {
-            log("wg-quick config not parseable")
-            completionHandler(PacketTunnelProviderError.cantParseWgQuickConfig)
-            return
-        }
-        
-        log("adapter.start")
-        adapter.start(tunnelConfiguration: tunnelConfiguration) { [weak self] adapterError in
-            guard let self = self else { return }
-            if let adapterError = adapterError {
-                self.log("WireGuard adapter error: \(adapterError.localizedDescription)")
-            } else {
-                let interfaceName = self.adapter.interfaceName ?? "unknown"
-                self.log("Tunnel interface is \(interfaceName)")
+        log("here")
+        do {
+            log("Attempting to parse wgQuickConfig")
+            let tunnelConfiguration = try TunnelConfiguration(fromWgQuickConfig: wgQuickConfig)
+            log("Parsed wgQuickConfig successfully")
+
+            bytesReceived = 0
+            bytesSent = 0
+
+            log("Attempting to start adapter")
+            adapter.start(tunnelConfiguration: tunnelConfiguration) { [weak self] adapterError in
+                guard let self = self else {
+                    self?.log("Self is nil")
+                    return
+                }
+                if let adapterError = adapterError {
+                    log("WireGuard adapter error: \(adapterError.localizedDescription)")
+                    completionHandler(adapterError)
+                } else {
+                    let interfaceName = self.adapter.interfaceName ?? "unknown"
+                    log("Tunnel interface is \(interfaceName)")
+                    self.startReadingPackets()
+                    completionHandler(nil)
+                }
             }
-            completionHandler(adapterError)
+            log("Adapter start method call completed")
+        } catch {
+            log("Failed to parse wgQuickConfig: \(error.localizedDescription)")
+            completionHandler(PacketTunnelProviderError.cantParseWgQuickConfig)
         }
     }
+
+
+
+
+
+
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        log("Stopping tunnel")
-        adapter.stop { [weak self] error in
-            guard let self = self else { return }
-            if let error = error {
-                self.log("Failed to stop WireGuard adapter: \(error.localizedDescription)")
-            }
-            completionHandler()
+            log("Stopping tunnel")
+            adapter.stop { [weak self] error in
+                guard let self = self else { return }
+                if let error = error {
+                    self.log("Failed to stop WireGuard adapter: \(error.localizedDescription)")
+                }
+                completionHandler()
 
-            #if os(macOS)
-            // HACK: We have to kill the tunnel process ourselves because of a macOS bug
-            exit(0)
-            #endif
+                #if os(macOS)
+                // HACK: We have to kill the tunnel process ourselves because of a macOS bug
+                exit(0)
+                #endif
+            }
+        }
+    private func startReadingPackets() {
+        adapter.getRuntimeConfiguration { [weak self] runtimeConfig in
+            guard let self = self else { return }
+            if let config = runtimeConfig {
+                // Extract tx_bytes and rx_bytes
+                if let txBytesString = self.extractValue(from: config, key: "tx_bytes"),
+                   let rxBytesString = self.extractValue(from: config, key: "rx_bytes"),
+                   let txBytes = Int64(txBytesString),
+                   let rxBytes = Int64(rxBytesString) {
+                    
+                    // Set the bytesReceived and bytesSent properties
+                    self.bytesReceived = rxBytes
+                    self.bytesSent = txBytes
+                } else {
+                    self.log("Failed to extract or convert tx_bytes or rx_bytes.")
+                }
+            } else {
+                // Handle the case where the configuration could not be retrieved
+                self.log("Failed to retrieve runtime configuration.")
+            }
         }
     }
+    private func extractValue(from config: String, key: String) -> String? {
+        let lines = config.split(separator: "\n")
+        for line in lines {
+            let components = line.split(separator: "=", maxSplits: 1)
+            if components.count == 2 {
+                let currentKey = components[0].trimmingCharacters(in: .whitespaces)
+                let value = components[1].trimmingCharacters(in: .whitespaces)
+                if currentKey == key {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
+   
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
-        // Add code here to handle the message.
-        if let handler = completionHandler {
-            handler(messageData)
+            if let message = String(data: messageData, encoding: .utf8) {
+                if message == "GET_STATISTICS" {
+                    startReadingPackets()
+                    let stats: [String: Int64] = ["totalDownload": bytesReceived, "totalUpload": bytesSent]
+                    if let data = try? JSONSerialization.data(withJSONObject: stats, options: []) {
+                        completionHandler?(data)
+                    } else {
+                        completionHandler?(nil)
+                    }
+                } else {
+                    completionHandler?(nil)
+                }
+
+                
+                
+            } else {
+                log("Failed to decode incoming message data")
+                completionHandler?(nil)
+            }
         }
-    }
+    
+
+
 
     override func sleep(completionHandler: @escaping () -> Void) {
         // Add code here to get ready to sleep.
+        //hasStartedReadingPackets = false;
+        log("Sleep")
         completionHandler()
     }
 
     override func wake() {
+        log("wake")
         // Add code here to wake up.
+        //if hasStartedReadingPackets {
+          // startReadingPackets() // Resume reading packets
+       //}
     }
 }
 
