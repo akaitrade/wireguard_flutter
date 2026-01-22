@@ -66,8 +66,9 @@ class WireguardFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
     }
 
     override fun onAttachedToActivity(activityPluginBinding: ActivityPluginBinding) {
-        this.activity = activityPluginBinding.activity as FlutterActivity
-    }
+      this.activity = activityPluginBinding.activity as FlutterActivity
+      activityPluginBinding.addActivityResultListener(this)
+  }
 
     override fun onDetachedFromActivityForConfigChanges() {
         this.activity = null
