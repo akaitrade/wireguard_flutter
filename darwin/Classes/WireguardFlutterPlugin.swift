@@ -12,17 +12,17 @@ import NetworkExtension
 
 public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
     private static var utils : VPNUtils! = VPNUtils()
-     
+
     public static var stage: FlutterEventSink?
     private var initialized : Bool = false
      var wireguardMethodChannel: FlutterMethodChannel?
-    
+
     public static func register(with registrar: FlutterPluginRegistrar) {
-       
+
         let instance = WireguardFlutterPlugin()
         instance.onRegister(registrar)
     }
-    
+
     public func onRegister(_ registrar: FlutterPluginRegistrar){
         #if os(iOS)
         let messenger = registrar.messenger()
@@ -52,11 +52,15 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
                 }
                 self.initialized = true
             case "stop":
+                WireguardFlutterPlugin.utils.isConnecting = false
+                WireguardFlutterPlugin.utils.isDisconnecting = true
                 self.disconnect(result: result)
             case "start":
                 let serverAddress: String? = (call.arguments as? [String: Any])?["serverAddress"] as? String
                 let wgQuickConfig: String? = (call.arguments as? [String: Any])?["wgQuickConfig"] as? String
                 let providerBundleIdentifier: String? = (call.arguments as? [String: Any])?["providerBundleIdentifier"] as? String
+                WireguardFlutterPlugin.utils.isDisconnecting = false
+                WireguardFlutterPlugin.utils.isConnecting = true
                 self.connect(serverAddress: serverAddress!, wgQuickConfig: wgQuickConfig!, providerBundleIdentifier: providerBundleIdentifier!, result: result)
             case "dispose":
                 self.initialized = false
@@ -77,6 +81,9 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
 
     private func connect(serverAddress: String, wgQuickConfig: String, providerBundleIdentifier:String, result: @escaping FlutterResult) {
         WireguardFlutterPlugin.utils.configureVPN(serverAddress: serverAddress, wgQuickConfig: wgQuickConfig, providerBundleIdentifier: providerBundleIdentifier) { success in
+            if !success {
+                WireguardFlutterPlugin.utils.isConnecting = false
+            }
             result(success)
         }
     }
@@ -86,7 +93,7 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
             result(success)
         }
     }
-    
+
     class VPNConnectionHandler: NSObject, FlutterStreamHandler {
         private var vpnConnection: FlutterEventSink?
         private var vpnConnectionObserver: NSObjectProtocol?
@@ -97,26 +104,53 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
                 NotificationCenter.default.removeObserver(observer)
             }
 
+            // Assign event sink BEFORE setting up observer to avoid race
+            self.vpnConnection = events
+
             vpnConnectionObserver = NotificationCenter.default.addObserver(
-                forName: NSNotification.Name.NEVPNStatusDidChange, object: nil, queue: nil
+                forName: NSNotification.Name.NEVPNStatusDidChange, object: nil, queue: .main
             ) { [weak self] notification in
                 guard let self = self, let connection = self.vpnConnection else {
-                    // Check if self or connection is nil and return early if that's the case
                     return
                 }
 
                 let nevpnconn = notification.object as! NEVPNConnection
                 let status = nevpnconn.status
+                let stageString = WireguardFlutterPlugin.utils.onVpnStatusChangedString(notification: status)
 
-                // Send the event using the eventSink closure
-                connection(WireguardFlutterPlugin.utils.onVpnStatusChangedString(notification: status))
+                // Suppress transient disconnected/invalid during connect
+                if WireguardFlutterPlugin.utils.isConnecting {
+                    if stageString == "disconnected" || stageString == "invalid" {
+                        NSLog("WireGuard: Suppressing transient '\(stageString ?? "nil")' during connect")
+                        return
+                    }
+                    // Clear connecting flag on definitive states
+                    if stageString == "connected" || stageString == "denied" || stageString == "no_connection" {
+                        WireguardFlutterPlugin.utils.isConnecting = false
+                    }
+                }
+
+                // Suppress late events during disconnect
+                if WireguardFlutterPlugin.utils.isDisconnecting {
+                    if stageString == "connected" || stageString == "connecting" {
+                        NSLog("WireGuard: Suppressing late '\(stageString ?? "nil")' during disconnect")
+                        return
+                    }
+                    if stageString == "disconnected" {
+                        WireguardFlutterPlugin.utils.isDisconnecting = false
+                    }
+                }
+
+                connection(stageString)
             }
 
-            // Assign the eventSink closure to the vpnConnection variable
-            self.vpnConnection = events
-
-            NETunnelProviderManager.loadAllFromPreferences { managers, error in
-                events(WireguardFlutterPlugin.utils.onVpnStatusChangedString(notification: managers?.first?.connection.status))
+            // Load current status — but skip if we're mid-connect/disconnect
+            if !WireguardFlutterPlugin.utils.isConnecting && !WireguardFlutterPlugin.utils.isDisconnecting {
+                NETunnelProviderManager.loadAllFromPreferences { managers, error in
+                    DispatchQueue.main.async {
+                        events(WireguardFlutterPlugin.utils.onVpnStatusChangedString(notification: managers?.first?.connection.status))
+                    }
+                }
             }
 
             return nil
@@ -141,7 +175,9 @@ class VPNUtils {
     var groupIdentifier: String?
     var serverAddress: String?
     var stage: FlutterEventSink!
-   
+    var isConnecting: Bool = false
+    var isDisconnecting: Bool = false
+
     func loadProviderManager(completion: @escaping (_ error: Error?) -> Void) {
         NETunnelProviderManager.loadAllFromPreferences { (managers, error) in
             if error == nil {
@@ -182,9 +218,7 @@ class VPNUtils {
                 }
             }
         }
-}
-
-}
+    }
 
     func onVpnStatusChanged(notification: NEVPNStatus) {
         switch notification {
@@ -197,9 +231,9 @@ class VPNUtils {
         case .disconnecting:
             stage?("disconnecting")
         case .invalid:
-            stage?("invalid")
+            stage?("disconnected")
         case .reasserting:
-            stage?("reasserting")
+            stage?("connecting")
         @unknown default:
             stage?("disconnected")
         }
@@ -219,11 +253,11 @@ class VPNUtils {
         case NEVPNStatus.disconnecting:
             return "disconnecting"
         case NEVPNStatus.invalid:
-            return "invalid"
+            return "disconnected"
         case NEVPNStatus.reasserting:
-            return "reasserting"
+            return "connecting"
         default:
-            return ""
+            return "disconnected"
         }
     }
 
@@ -244,16 +278,16 @@ class VPNUtils {
             }
             let preExistingTunnelManager = tunnelManagersInSettings?.first
             let tunnelManager = preExistingTunnelManager ?? NETunnelProviderManager()
-            
+
             let protocolConfiguration = NETunnelProviderProtocol()
-            
+
             protocolConfiguration.providerBundleIdentifier = providerBundleIdentifier!
             protocolConfiguration.serverAddress = serverAddress
             protocolConfiguration.providerConfiguration = ["wgQuickConfig": wgQuickConfig!]
-            
+
             tunnelManager.protocolConfiguration = protocolConfiguration
             tunnelManager.isEnabled = true
-            
+
             tunnelManager.saveToPreferences { error in
                 if let error = error {
                     NSLog("Error (saveToPreferences): \(error)")
@@ -283,7 +317,7 @@ class VPNUtils {
             }
         }
     }
-  
+
     func stopVPN(completion: @escaping (Bool?) -> Void) {
         NETunnelProviderManager.loadAllFromPreferences { tunnelManagersInSettings, error in
             if let error = error {
@@ -291,7 +325,7 @@ class VPNUtils {
                 completion(false)
                 return
             }
-            
+
             if let tunnelManager = tunnelManagersInSettings?.first {
                 guard let session = tunnelManager.connection as? NETunnelProviderSession else {
                     NSLog("tunnelManager.connection is invalid")
