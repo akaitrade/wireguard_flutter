@@ -97,6 +97,12 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
     class VPNConnectionHandler: NSObject, FlutterStreamHandler {
         private var vpnConnection: FlutterEventSink?
         private var vpnConnectionObserver: NSObjectProtocol?
+        private var connectedAt: Date?
+        private var disconnectVerifyTimer: DispatchWorkItem?
+
+        /// Grace period after connected — spurious disconnected events within this
+        /// window are verified against actual tunnel status before forwarding.
+        private let postConnectGracePeriod: TimeInterval = 3.0
 
         func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
             // Remove existing observer if any
@@ -141,6 +147,44 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
                     }
                 }
 
+                // Track when we become connected
+                if stageString == "connected" {
+                    self.connectedAt = Date()
+                    self.disconnectVerifyTimer?.cancel()
+                    self.disconnectVerifyTimer = nil
+                }
+
+                // Post-connect grace: verify disconnected before forwarding
+                if stageString == "disconnected", let connectedTime = self.connectedAt {
+                    let elapsed = Date().timeIntervalSince(connectedTime)
+                    if elapsed < self.postConnectGracePeriod {
+                        NSLog("WireGuard: Disconnected %.1fs after connected — verifying actual status", elapsed)
+                        self.disconnectVerifyTimer?.cancel()
+                        let verifyWork = DispatchWorkItem { [weak self] in
+                            guard let self = self, let conn = self.vpnConnection else { return }
+                            NETunnelProviderManager.loadAllFromPreferences { managers, _ in
+                                DispatchQueue.main.async {
+                                    let actualStatus = managers?.first?.connection.status
+                                    let actualString = WireguardFlutterPlugin.utils.onVpnStatusChangedString(notification: actualStatus)
+                                    if actualString == "connected" {
+                                        NSLog("WireGuard: Tunnel still connected — suppressing spurious disconnected")
+                                    } else {
+                                        NSLog("WireGuard: Tunnel confirmed disconnected — forwarding")
+                                        self?.connectedAt = nil
+                                        conn(actualString)
+                                    }
+                                }
+                            }
+                        }
+                        self.disconnectVerifyTimer = verifyWork
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: verifyWork)
+                        return
+                    } else {
+                        // Beyond grace period — genuine disconnect
+                        self.connectedAt = nil
+                    }
+                }
+
                 connection(stageString)
             }
 
@@ -160,6 +204,8 @@ public class WireguardFlutterPlugin: NSObject, FlutterPlugin {
             if let observer = vpnConnectionObserver {
                 NotificationCenter.default.removeObserver(observer)
             }
+            disconnectVerifyTimer?.cancel()
+            disconnectVerifyTimer = nil
             vpnConnection = nil
 
             return nil
